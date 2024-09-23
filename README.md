@@ -42,7 +42,7 @@ python generate_SE_score.py --knn 15
 ## Train the model with Structure-Entropy-Based Sample Selection
 
 ```python
-python train.py --base-dir ./data-model/cifar10 --dataset cifar10 --gpuid 0 --epochs 200  --coreset --coreset-mode SE_bns --coreset-ratio 0.1 --mis-ratio 0.35 --knn 11 --gamma 1.1 --data-score-path ./data-model/cifar10/all-data/cifar10-data-score-all-11NN-data.pickle
+python train.py --base-dir ./data-model/cifar10 --dataset cifar10 --gpuid 0 --epochs 200  --coreset --coreset-mode SE_bns --coreset-ratio 0.1 --mis-ratio 0.35 --knn 15 --gamma 1.1 --data-score-path ./data-model/cifar10/all-data/cifar10-data-score-all-15NN-data.pickle
 ```
 
 
