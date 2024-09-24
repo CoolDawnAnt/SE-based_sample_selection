@@ -78,6 +78,8 @@ for batch_idx, (idx, (_, y)) in enumerate(trainloader):
         print(batch_idx)
 
 print(len(targets))
+with open('./graphs/imagenet-targets.pickle','wb') as f:
+    pickle.dump(targets, f)
 data_importance = {}
 targets = torch.tensor(targets)
 data_size = targets.shape[0]

@@ -14,6 +14,7 @@ from core.model_generator import wideresnet, preact_resnet, resnet
 from core.training import Trainer, TrainingDynamicsLogger
 from core.data import CoresetSelection, IndexDataset, CIFARDataset, ImageNetDataset
 from core.utils import print_training_info, StdRedirect
+from Structure_Entropy.SE_bns import SE_bns
 
 model_names = ['resnet18', 'wrn-34-10', 'preact_resnet18']
 
@@ -73,8 +74,6 @@ parser.add_argument('--gpuid', type=str, default='0',
                     help='The ID of GPU.')
 parser.add_argument('--local_rank', type=str)
 
-
-
 args = parser.parse_args()
 start_time = datetime.now()
 
@@ -90,9 +89,8 @@ last_ckpt_path = os.path.join(task_dir, f'ckpt-last.pt')
 best_ckpt_path = os.path.join(task_dir, f'ckpt-best.pt')
 log_path = os.path.join(task_dir, f'log-train-{args.task_name}.log')
 
-
 ######################### Print setting #########################
-sys.stdout=StdRedirect(log_path)
+sys.stdout = StdRedirect(log_path)
 print_training_info(args, all=True)
 #########################
 print(f'Last ckpt path: {last_ckpt_path}')
@@ -114,22 +112,39 @@ total_num = len(trainset)
 
 if args.coreset:
     if args.coreset_mode == 'random':
-        coreset_index = CoresetSelection.random_selection(total_num=len(trainset), num=args.coreset_ratio * len(trainset))
+        coreset_index = CoresetSelection.random_selection(total_num=len(trainset),
+                                                          num=args.coreset_ratio * len(trainset))
     else:
         with open(args.data_score_path, 'rb') as f:
             data_score = pickle.load(f)
 
     if args.coreset_mode == 'coreset':
-        coreset_index = CoresetSelection.score_monotonic_selection(data_score=data_score, key=args.coreset_key, ratio=args.coreset_ratio, descending=(args.data_score_descending == 1), class_balanced=(args.class_balanced == 1))
+        coreset_index = CoresetSelection.score_monotonic_selection(data_score=data_score, key=args.coreset_key,
+                                                                   ratio=args.coreset_ratio,
+                                                                   descending=(args.data_score_descending == 1),
+                                                                   class_balanced=(args.class_balanced == 1))
 
     if args.coreset_mode == 'stratified':
         mis_num = int(args.mis_ratio * total_num)
-        data_score, score_index = CoresetSelection.mislabel_mask(data_score, mis_key='accumulated_margin', mis_num=mis_num, mis_descending=False, coreset_key=args.coreset_key)
+        data_score, score_index = CoresetSelection.mislabel_mask(data_score, mis_key='accumulated_margin',
+                                                                 mis_num=mis_num, mis_descending=False,
+                                                                 coreset_key=args.coreset_key)
 
         print(f'Strata: {args.strata}')
         coreset_num = int(args.coreset_ratio * total_num)
-        coreset_index, _ = CoresetSelection.stratified_sampling(data_score=data_score, coreset_key=args.coreset_key, coreset_num=coreset_num)
+        coreset_index, _ = CoresetSelection.stratified_sampling(data_score=data_score, coreset_key=args.coreset_key,
+                                                                coreset_num=coreset_num)
         coreset_index = score_index[coreset_index]
+    if args.coreset_mode == 'SE_bns':
+        with open(args.data_score_path, 'rb') as f:
+            data_score = pickle.load(f)
+
+        se = data_score['SE']
+        Aum = data_score['accumulated_margin']
+        scores = R(-Aum) * se
+        scores2 = -Aum
+        sampler = partial(SE_bns, gamma=args.gamma, graph=f'{args.dataset}-train-{args.knn}NN', scores2=scores2,use_gamma=True,label_path='imagenet-targets.pickle')
+        coreset_index = sampler(dataset=trainset, scores=scores, ratio=args.coreset_ratio, mis_ratio=args.mis_ratio)
 
     trainset = torch.utils.data.Subset(trainset, coreset_index)
     print(len(trainset))
@@ -156,7 +171,7 @@ if args.network == 'resnet50':
     print('Using resnet50.')
     model = torchvision.models.resnet50(pretrained=False, progress=True)
 
-model=torch.nn.parallel.DataParallel(model).cuda()
+model = torch.nn.parallel.DataParallel(model).cuda()
 # model=model.cuda()
 
 if args.iterations is None:
@@ -178,17 +193,19 @@ optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay
 
 print(f'Using scheduler: {args.scheduler}!')
 if args.scheduler == 'default':
-    scheduler_epoch = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[30,60,90,100], gamma=0.1)
+    scheduler_epoch = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[30, 60, 90, 100], gamma=0.1)
     scheduler_iteration = None
-elif args.scheduler == 'short': # total epoch 70
+elif args.scheduler == 'short':  # total epoch 70
     # scheduler_epoch = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[20,40,60,65], gamma=0.1)
     scheduler_epoch = None
-    scheduler_iteration = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80000, 160000, 240000, 270000], gamma=0.1)
-elif args.scheduler == 'short-400k': # total epoch 70
+    scheduler_iteration = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80000, 160000, 240000, 270000],
+                                                               gamma=0.1)
+elif args.scheduler == 'short-400k':  # total epoch 70
     # scheduler_epoch = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[20,40,60,65], gamma=0.1)
     scheduler_epoch = None
-    scheduler_iteration = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100000, 200000, 300000, 350000], gamma=0.1)
-elif args.scheduler == 'cosine': # total epoch 70
+    scheduler_iteration = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100000, 200000, 300000, 350000],
+                                                               gamma=0.1)
+elif args.scheduler == 'cosine':  # total epoch 70
     scheduler_epoch = None
     scheduler_iteration = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_of_iterations, eta_min=1e-4)
 
@@ -205,13 +222,16 @@ while num_of_iterations > 0:
     else:
         TD_logger = TrainingDynamicsLogger()
     iterations_epoch = min(num_of_iterations, iterations_per_epoch)
-    trainer.train(current_epoch, -1, model, trainloader, optimizer, criterion, scheduler_iteration, device, TD_logger=TD_logger, log_interval=1000, printlog=True)
+    trainer.train(current_epoch, -1, model, trainloader, optimizer, criterion, scheduler_iteration, device,
+                  TD_logger=TD_logger, log_interval=1000, printlog=True)
 
     num_of_iterations -= iterations_per_epoch
 
     if current_epoch % epoch_per_testing == 0:
-        test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=200,  printlog=True, topk=5)
-        test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=200,  printlog=True, topk=1)
+        test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=200, printlog=True,
+                                           topk=5)
+        test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=200, printlog=True,
+                                           topk=1)
 
         if test_acc > best_acc:
             print('Updating best ckpt.')
@@ -238,7 +258,7 @@ while num_of_iterations > 0:
 
 print('Last ckpt evaluation.')
 # test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=200,  printlog=True, topk=5)
-test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=200,  printlog=True, topk=1)
+test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=200, printlog=True, topk=1)
 
 print('done')
 print(f'Total time consumed: {(datetime.now() - start_time).total_seconds():.2f}')
