@@ -23,6 +23,7 @@ import time
 from copy import deepcopy
 from functools import partial
 
+
 def now():
     from datetime import datetime
     return datetime.now().strftime("%Y%m%d%H%M%S")[:-1]
@@ -57,11 +58,11 @@ parser.add_argument('--task-name', type=str, default=None,
 
 ######################### Coreset Setting #########################
 parser.add_argument('--coreset', action='store_true', default=False)
-parser.add_argument('--coreset-mode', type=str, choices=['random', 'coreset', 'stratified' , 'moderate' , 'SE_bns'])
+parser.add_argument('--coreset-mode', type=str, choices=['random', 'coreset', 'stratified', 'moderate', 'SE_bns'])
 
 parser.add_argument('--data-score-path', type=str)
 parser.add_argument('--feature-path', type=str)
-parser.add_argument('--coreset-key', type=str,default='accumulated_margin_log')
+parser.add_argument('--coreset-key', type=str, default='accumulated_margin_log')
 parser.add_argument('--data-score-descending', type=int, default=0,
                     help='Set 1 to use larger score data first.')
 parser.add_argument('--class-balanced', type=int, default=0,
@@ -69,11 +70,11 @@ parser.add_argument('--class-balanced', type=int, default=0,
 parser.add_argument('--coreset-ratio', type=float)
 
 #### Double-end Pruning Setting ####
-parser.add_argument('--mis-key', type=str,default='accumulated_margin_log')
+parser.add_argument('--mis-key', type=str, default='accumulated_margin_log')
 parser.add_argument('--mis-data-score-descending', type=int, default=0,
                     help='Set 1 to use larger score data first.')
 parser.add_argument('--mis-ratio', type=float)
-parser.add_argument('--gamma', type=float,default=1)
+parser.add_argument('--gamma', type=float, default=1)
 # parser.add_argument('--score', type=str , default = None)
 # parser.add_argument('--sample', type=str , default = None)
 
@@ -87,9 +88,7 @@ parser.add_argument('--gpuid', type=str, default='0',
 ######################### ours #############
 
 parser.add_argument('--seed', type=int, default=42)
-parser.add_argument('--knn', type=int, default=6) 
-
-
+parser.add_argument('--knn', type=int, default=6)
 
 parser.add_argument('--coreset-only', action='store_true', default=False)
 
@@ -106,18 +105,16 @@ start_time = datetime.now()
 
 assert args.epochs is None or args.iterations is None, "Both epochs and iterations are used!"
 
-
 print(f'Dataset: {args.dataset}')
 ######################### Set path variable #########################
 task_name = f'{args.dataset}-{args.coreset_mode}' if args.task_name is None else args.task_name
 if args.coreset_mode is not None:
     task_dir = os.path.join(args.base_dir, f'{task_name}/{args.coreset_ratio}/{now()}')
     while (os.path.exists(task_dir)):
-        time.sleep(5 + random.randint(0 , 3))
+        time.sleep(5 + random.randint(0, 3))
         task_dir = os.path.join(args.base_dir, f'{task_name}/{args.coreset_ratio}/{now()}')
 else:
     task_dir = os.path.join(args.base_dir, task_name)
-
 
 os.makedirs(task_dir, exist_ok=True)
 last_ckpt_path = os.path.join(task_dir, f'ckpt-last.pt')
@@ -127,11 +124,9 @@ log_path = os.path.join(task_dir, f'log-train-{args.task_name}.log')
 
 print(log_path)
 ######################### Print setting #########################
-sys.stdout=StdRedirect(log_path)
+sys.stdout = StdRedirect(log_path)
 print_training_info(args, all=True)
 #########################
-
-
 
 
 ######################### seed #########################
@@ -170,6 +165,7 @@ coreset_ratio = args.coreset_ratio
 coreset_descending = (args.data_score_descending == 1)
 total_num = len(trainset)
 
+
 def R(A):
     amin, amax = torch.min(A), torch.max(A)
     return (A - amin) / (amax - amin)
@@ -181,37 +177,45 @@ if args.coreset:
             data_score = pickle.load(f)
 
     if args.coreset_mode == 'random':
-        coreset_index = CoresetSelection.random_selection(total_num=len(trainset), num=args.coreset_ratio * len(trainset))
+        coreset_index = CoresetSelection.random_selection(total_num=len(trainset),
+                                                          num=args.coreset_ratio * len(trainset))
 
     if args.coreset_mode == 'coreset':
-        coreset_index = CoresetSelection.score_monotonic_selection(data_score=data_score, key=args.coreset_key, ratio=args.coreset_ratio, descending=(args.data_score_descending == 1), class_balanced=(args.class_balanced == 1))
+        coreset_index = CoresetSelection.score_monotonic_selection(data_score=data_score, key=args.coreset_key,
+                                                                   ratio=args.coreset_ratio,
+                                                                   descending=(args.data_score_descending == 1),
+                                                                   class_balanced=(args.class_balanced == 1))
 
     if args.coreset_mode == 'stratified':
         mis_num = int(args.mis_ratio * total_num)
         desdes = False if args.mis_key[0] == 'a' else True
         print(desdes)
-        data_score, score_index = CoresetSelection.mislabel_mask(data_score, mis_key=args.mis_key, mis_num=mis_num, mis_descending = False if args.mis_key[0] == 'a' else True, coreset_key=args.coreset_key)
+        data_score, score_index = CoresetSelection.mislabel_mask(data_score, mis_key=args.mis_key, mis_num=mis_num,
+                                                                 mis_descending=False if args.mis_key[
+                                                                                             0] == 'a' else True,
+                                                                 coreset_key=args.coreset_key)
 
         coreset_num = int(args.coreset_ratio * total_num)
-        coreset_index, _ = CoresetSelection.stratified_sampling(data_score=data_score, coreset_key=args.coreset_key, coreset_num=coreset_num)
+        coreset_index, _ = CoresetSelection.stratified_sampling(data_score=data_score, coreset_key=args.coreset_key,
+                                                                coreset_num=coreset_num)
         coreset_index = score_index[coreset_index]
 
     if args.coreset_mode == 'moderate':
         features = np.load(args.feature_path)['feature']
         coreset_index = CoresetSelection.moderate_selection(data_score, args.coreset_ratio, features)
-    
+
     if args.coreset_mode == 'SE_bns':
         with open(args.data_score_path, 'rb') as f:
             data_score = pickle.load(f)
 
         se = data_score['SE']
-        Aum = data_score['accumulated_margin']    
+        Aum = data_score['accumulated_margin']
         scores = R(-Aum) * se
         scores2 = -Aum
-        sampler = partial(SE_bns,gamma=args.gamma,graph = f'{args.dataset}-train-{args.knn}NN',scores2 = scores2) 
-        coreset_index = sampler(dataset = trainset, scores = scores, ratio = args.coreset_ratio, mis_ratio = args.mis_ratio)  
-        
-    
+        sampler = partial(SE_bns, gamma=args.gamma, graph=f'{args.dataset}-train-{args.knn}NN', scores2=scores2,
+                          use_gamma=True)
+        coreset_index = sampler(dataset=trainset, scores=scores, ratio=args.coreset_ratio, mis_ratio=args.mis_ratio)
+
     trainset = torch.utils.data.Subset(trainset, coreset_index)
     print(len(trainset))
 ######################### Coreset Selection end #########################
@@ -219,7 +223,7 @@ if args.coreset:
 
 if args.coreset_only:
     np.save(log_path, np.array(coreset_index))
-    sys.exit() 
+    sys.exit()
 trainset = IndexDataset(trainset)
 print(len(trainset))
 
@@ -246,9 +250,9 @@ else:
     num_of_iterations = args.iterations
 
 if args.dataset in ['cifar10', 'svhn', 'cinic10']:
-    num_classes=10
+    num_classes = 10
 else:
-    num_classes=100
+    num_classes = 100
 
 if args.network == 'resnet18':
     print('resnet18')
@@ -270,7 +274,6 @@ if args.epochs is None:
 else:
     epoch_per_testing = 1
 
-
 print(f'Total epoch: {num_of_iterations // iterations_per_epoch}')
 print(f'Iterations per epoch: {iterations_per_epoch}')
 print(f'Total iterations: {num_of_iterations}')
@@ -285,12 +288,13 @@ best_epoch = -1
 current_epoch = 0
 while num_of_iterations > 0:
     iterations_epoch = min(num_of_iterations, iterations_per_epoch)
-    trainer.train(current_epoch, -1, model, trainloader, optimizer, criterion, scheduler, device, TD_logger=TD_logger, log_interval=60, printlog=True)
+    trainer.train(current_epoch, -1, model, trainloader, optimizer, criterion, scheduler, device, TD_logger=TD_logger,
+                  log_interval=60, printlog=True)
 
     num_of_iterations -= iterations_per_epoch
 
     if current_epoch % epoch_per_testing == 0 or num_of_iterations == 0:
-        test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=20,  printlog=True)
+        test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=20, printlog=True)
 
         if test_acc > best_acc:
             best_acc = test_acc
@@ -305,15 +309,15 @@ while num_of_iterations > 0:
     # scheduler.step()
 
 # last ckpt testing
-test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=20,  printlog=True)
+test_loss, test_acc = trainer.test(model, testloader, criterion, device, log_interval=20, printlog=True)
 if test_acc > best_acc:
-            best_acc = test_acc
-            best_epoch = current_epoch
-            state = {
-                'model_state_dict': model.state_dict(),
-                'epoch': best_epoch
-            }
-            torch.save(state, best_ckpt_path)
+    best_acc = test_acc
+    best_epoch = current_epoch
+    state = {
+        'model_state_dict': model.state_dict(),
+        'epoch': best_epoch
+    }
+    torch.save(state, best_ckpt_path)
 print('==========================')
 print(f'Best acc: {best_acc * 100:.2f}')
 print(f'Best acc: {best_acc}')
