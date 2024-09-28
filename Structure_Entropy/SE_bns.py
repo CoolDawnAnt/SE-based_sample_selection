@@ -50,7 +50,7 @@ def SE_bns(dataset, ratio, mis_ratio, gamma=1, remain_version=1, mis_r=0, scores
 
     data_dir = './graphs/'
     undirected_adj = sparse.load_npz(os.path.join(data_dir, f'{graph}.npz'))
-    undirected_adj.data = 2 - undirected_adj.data
+    undirected_adj.data = (2 - undirected_adj.data) / 2
     SE_tree = PartitionTree(adj_matrix=undirected_adj, is_sparse=True)
 
     def check(mid, dfn, _visited):
